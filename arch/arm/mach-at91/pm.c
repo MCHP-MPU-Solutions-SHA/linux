@@ -15,6 +15,9 @@
 #include <linux/platform_device.h>
 #include <linux/parser.h>
 #include <linux/suspend.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
+#include <linux/gpio/machine.h>
 
 #include <linux/clk.h>
 #include <linux/clk/at91_pmc.h>
@@ -129,6 +132,7 @@ struct at91_soc_pm {
 	const struct of_device_id *ws_ids;
 	struct device_node *shdwc_np;
 	struct at91_pm_bu *bu;
+	struct regmap *bu_reg;
 	struct at91_pm_quirks quirks;
 	struct at91_pm_data data;
 	struct at91_pm_sfrbu_regs sfrbu_regs;
@@ -268,6 +272,39 @@ static int at91_pm_device_in_list(const struct platform_device *pdev,
 	}
 
 	return in_list;
+}
+
+static int at91_pm_init_gpio_lpm(void)
+{
+	struct device_node *gpio_np;
+	unsigned int offset, active, sodr, codr;
+
+	if (!soc_pm.shdwc_np)
+		return 0;
+
+	gpio_np = of_parse_phandle(soc_pm.shdwc_np, "gpio-lpm", 0);
+	if (!gpio_np)
+		return 0;
+
+	if (of_property_read_u32_index(soc_pm.shdwc_np, "gpio-lpm", 1, &offset) ||
+		of_property_read_u32_index(soc_pm.shdwc_np, "gpio-lpm", 2, &active) ||
+		of_property_read_u32_index(soc_pm.shdwc_np, "gpio-lpm", 3, &sodr) ||
+		of_property_read_u32_index(soc_pm.shdwc_np, "gpio-lpm", 4, &codr))
+		return -EINVAL;
+
+	soc_pm.data.lpm_gpio_msk = 1 << offset;
+	soc_pm.data.lpm_gpio_reg  = of_iomap(gpio_np, 0);
+	if (!soc_pm.data.lpm_gpio_reg)
+		return -ENOMEM;
+
+	if (active == GPIO_ACTIVE_HIGH)
+		soc_pm.data.lpm_gpio_reg += sodr;
+	else if (active == GPIO_ACTIVE_LOW)
+		soc_pm.data.lpm_gpio_reg += codr;
+	else
+		return -EINVAL;
+
+	return 0;
 }
 
 static int at91_pm_prepare_lpm(unsigned int pm_mode)
@@ -547,7 +584,7 @@ clk_unconfigure:
  */
 static int at91_pm_begin(suspend_state_t state)
 {
-	int ret;
+	int ret, val = 0;
 
 	switch (state) {
 	case PM_SUSPEND_MEM:
@@ -573,10 +610,19 @@ static int at91_pm_begin(suspend_state_t state)
 		return ret;
 	}
 
+
 	if (soc_pm.data.mode == AT91_PM_BACKUP)
-		soc_pm.bu->suspended = 1;
-	else if (soc_pm.bu)
-		soc_pm.bu->suspended = 0;
+		val = 1;
+
+	if (soc_pm.bu) {
+		soc_pm.bu->suspended = val;
+	} else if (soc_pm.bu_reg) {
+			regmap_write(soc_pm.bu_reg,
+				regmap_get_max_register(soc_pm.bu_reg) - 12, val);
+	}
+
+	if (IS_ENABLED(CONFIG_SOC_SAM9X60))
+		at91_pm_init_gpio_lpm();
 
 	return 0;
 }
@@ -1142,13 +1188,32 @@ static int __init at91_pm_backup_init(void)
 	struct device_node *np;
 	struct platform_device *pdev;
 	int ret = -ENODEV, located = 0;
+	int last_reg;
 
 	if (!IS_ENABLED(CONFIG_SOC_SAMA5D2) &&
-	    !IS_ENABLED(CONFIG_SOC_SAMA7G5))
+	    !IS_ENABLED(CONFIG_SOC_SAMA7G5) &&
+		!IS_ENABLED(CONFIG_SOC_SAM9X60))
 		return -EPERM;
 
 	if (!at91_is_pm_mode_active(AT91_PM_BACKUP))
 		return 0;
+
+	if (IS_ENABLED(CONFIG_SOC_SAM9X60)) {
+		soc_pm.bu_reg = syscon_regmap_lookup_by_compatible("microchip,sam9x60-gpbr");
+		ret = IS_ERR(soc_pm.bu_reg);
+		if (ret) {
+			soc_pm.bu_reg = NULL;
+			return ret;
+		}
+
+		last_reg = regmap_get_max_register(soc_pm.bu_reg);
+		regmap_write(soc_pm.bu_reg, last_reg - 12, 0);
+		regmap_write(soc_pm.bu_reg, last_reg - 8 , 0);
+		regmap_write(soc_pm.bu_reg, last_reg - 4 , __pa_symbol(&canary));
+		regmap_write(soc_pm.bu_reg, last_reg     , __pa_symbol(cpu_resume));
+
+		return 0;
+	}
 
 	np = of_find_compatible_node(NULL, NULL, "atmel,sama5d2-securam");
 	if (!np)
@@ -1583,9 +1648,11 @@ void __init sam9x60_pm_init(void)
 {
 	static const int modes[] __initconst = {
 		AT91_PM_STANDBY, AT91_PM_ULP0, AT91_PM_ULP0_FAST, AT91_PM_ULP1,
+		AT91_PM_BACKUP,
 	};
 	static const int iomaps[] __initconst = {
 		[AT91_PM_ULP1]		= AT91_PM_IOMAP(SHDWC),
+		[AT91_PM_BACKUP]	= AT91_PM_IOMAP(SHDWC),
 	};
 	int ret;
 

@@ -422,6 +422,12 @@
 		};
 	};
 
+	shutdown_controller {
+		pinctrl_lpm_gpio_default: lpm_gpio {
+			atmel,pins = <AT91_PIOB 15 AT91_PERIPH_GPIO (AT91_PINCTRL_OUTPUT | AT91_PINCTRL_OUTPUT_VAL(1))>;
+		};
+	};
+
 	usb0 {
 		pinctrl_usba_vbus: usba-vbus {
 			atmel,pins = <AT91_PIOA 27 AT91_PERIPH_GPIO AT91_PINCTRL_NONE>;
@@ -469,6 +475,9 @@
 
 &shutdown_controller {
 	debounce-delay-us = <976>;
+	gpio-lpm = <&pioB 15 GPIO_ACTIVE_LOW 0x30 0x34>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_lpm_gpio_default>;
 	status = "okay";
 
 	input@0 {

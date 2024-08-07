@@ -40,6 +40,8 @@ struct at91_pm_data {
 	unsigned int pmc_mckr_offset;
 	unsigned int pmc_version;
 	unsigned int lpm;
+	void __iomem *lpm_gpio_reg;
+	unsigned int lpm_gpio_msk;
 };
 #endif
 

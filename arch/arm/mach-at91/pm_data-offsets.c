@@ -19,6 +19,8 @@ int main(void)
 	DEFINE(PM_DATA_PMC_VERSION,	offsetof(struct at91_pm_data,
 						 pmc_version));
 	DEFINE(PM_DATA_LPM,		offsetof(struct at91_pm_data, lpm));
+	DEFINE(PM_DATA_LPM_GPIO_REG,	offsetof(struct at91_pm_data, lpm_gpio_reg));
+	DEFINE(PM_DATA_LPM_GPIO_MSK,	offsetof(struct at91_pm_data, lpm_gpio_msk));
 
 	return 0;
 }

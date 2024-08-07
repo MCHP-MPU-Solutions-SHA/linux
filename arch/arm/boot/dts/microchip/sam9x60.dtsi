@@ -1342,7 +1342,7 @@
 
 			gpbr: syscon@fffffe60 {
 				compatible = "microchip,sam9x60-gpbr", "atmel,at91sam9260-gpbr", "syscon";
-				reg = <0xfffffe60 0x10>;
+				reg = <0xfffffe60 0x28>;
 			};
 
 			rtc: rtc@fffffea8 {

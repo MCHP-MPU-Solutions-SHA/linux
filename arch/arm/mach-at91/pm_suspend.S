@@ -1003,6 +1003,7 @@ ulp_exit:
 	mov	tmp3, #0
 	wait_mckrdy tmp3
 
+#ifndef CONFIG_SOC_SAM_V4_V5
 	/*BUMEN*/
 	ldr	r0, .sfrbu
 	mov	tmp1, #0x1
@@ -1012,6 +1013,15 @@ ulp_exit:
 1:	ldr	tmp1, [r0, #0x10]
 	tst	tmp1, #0x1
 	beq	1b
+#endif
+
+#ifdef CONFIG_SOC_SAM9X60
+	/* GPIO-based LPM */
+	ldr	r0, .lpm_gpio_reg
+	ldr	tmp1, .lpm_gpio_msk
+	cmp r0, #0
+	strne tmp1, [r0]
+#endif
 
 	/* Shutdown */
 	ldr	r0, .shdwc
@@ -1021,6 +1031,8 @@ ulp_exit:
 	orr	tmp1, tmp1, #0x200000
 #endif
 	str	tmp1, [r0, #0]
+sd_loop:
+	b sd_loop
 .endm
 
 /*
@@ -1074,15 +1086,24 @@ ENTRY(at91_pm_suspend_in_sram)
 	cmp	tmp1, #0
 	ldrne	tmp2, [tmp1, #0]
 
+	ldr	tmp1, [r0, #PM_DATA_SHDWC]
+	str	tmp1, .shdwc
+	cmp	tmp1, #0
+	ldrne	tmp2, [tmp1, #0]
+
+#ifdef CONFIG_SOC_SAM9X60
+	ldr	tmp1, [r0, #PM_DATA_LPM_GPIO_REG]
+	str	tmp1, .lpm_gpio_reg
+	cmp	tmp1, #0
+	ldrne	tmp2, [tmp1, #0]
+	ldr	tmp1, [r0, #PM_DATA_LPM_GPIO_MSK]
+	str	tmp1, .lpm_gpio_msk
+#endif
+
 #ifndef CONFIG_SOC_SAM_V4_V5
 	/* ldrne below are here to preload their address in the TLB */
 	ldr	tmp1, [r0, #PM_DATA_RAMC_PHY]
 	str	tmp1, .sramc_phy_base
-	cmp	tmp1, #0
-	ldrne	tmp2, [tmp1, #0]
-
-	ldr	tmp1, [r0, #PM_DATA_SHDWC]
-	str	tmp1, .shdwc
 	cmp	tmp1, #0
 	ldrne	tmp2, [tmp1, #0]
 
@@ -1167,6 +1188,12 @@ ENDPROC(at91_pm_suspend_in_sram)
 .saved_mck3:
 	.word 0
 .saved_mck4:
+	.word 0
+#endif
+#ifdef CONFIG_SOC_SAM9X60
+.lpm_gpio_reg:
+	.word 0
+.lpm_gpio_msk:
 	.word 0
 #endif
 
